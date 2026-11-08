@@ -1,0 +1,26 @@
+# Python Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+
+# Node.js
+node_modules/
+dist/
+.vite/
+
+# Local Environment
+.env.local
+.env.*.local
+
+# OS Files
+Thumbs.db
+Desktop.ini
+.DS_Store
+

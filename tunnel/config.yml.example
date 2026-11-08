@@ -1,0 +1,16 @@
+# Cloudflare Tunnel Configuration for STOCK UNDO!
+# Replace <TUNNEL_UUID> and credentials-file path with your actual Cloudflare Tunnel credentials
+
+tunnel: <TUNNEL_UUID>
+credentials-file: C:\Users\USER\.cloudflared\<TUNNEL_UUID>.json
+
+ingress:
+  # Route public HTTPS subdomain to local FastAPI backend (Port 8080 or 8000)
+  - hostname: stock-undo-api.yourdomain.com
+    service: http://127.0.0.1:8080
+    originRequest:
+      connectTimeout: 10s
+      noTLSVerify: true
+
+  # Catch-all rule (required by cloudflared)
+  - service: http_status:404

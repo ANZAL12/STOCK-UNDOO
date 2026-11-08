@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A192F" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#EA580C" />
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Base Rounded Container -->
+  <rect x="24" y="24" width="464" height="464" rx="96" fill="url(#bgGrad)" stroke="#1E293B" stroke-width="4" filter="url(#shadow)" />
+
+  <!-- Playful Stock Box / Warehouse Icon -->
+  <g transform="translate(256, 215) scale(0.95)">
+    <!-- Isometric Box Top Face -->
+    <polygon points="0,-100 95,-45 0,10 -95,-45" fill="#1E293B" stroke="#334155" stroke-width="3" />
+    <!-- Left Face -->
+    <polygon points="-95,-45 0,10 0,120 -95,65" fill="#0D1F38" stroke="#334155" stroke-width="3" />
+    <!-- Right Face -->
+    <polygon points="0,10 95,-45 95,65 0,120" fill="#132A4A" stroke="#334155" stroke-width="3" />
+
+    <!-- Undo Arrow Swirling around Box (Bright Amber/Orange) -->
+    <path d="M 60,-50 C 130,-50 160,20 120,75 C 90,115 15,115 -35,80" 
+          fill="none" stroke="url(#accentGrad)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" />
+    <polygon points="-35,80 -20,115 -60,85 -30,55" fill="#F59E0B" />
+
+    <!-- Available Stock Check Badge (Green) -->
+    <circle cx="85" cy="85" r="38" fill="url(#greenGrad)" stroke="#FFFFFF" stroke-width="5" filter="url(#shadow)" />
+    <path d="M 70,85 L 80,95 L 102,73" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <!-- Typography: STOCK UNDO! -->
+  <text x="256" y="395" text-anchor="middle" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-weight="900" font-size="44" fill="#FFFFFF" letter-spacing="1.5">
+    STOCK <tspan fill="#F59E0B">UNDO!</tspan>
+  </text>
+
+  <!-- Tagline -->
+  <text x="256" y="435" text-anchor="middle" font-family="'Inter', 'Segoe UI', system-ui, sans-serif" font-weight="600" font-size="14" fill="#94A3B8" letter-spacing="0.5">
+    Check stock before you call the godown!
+  </text>
+</svg>
+
