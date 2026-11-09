@@ -175,13 +175,27 @@ export default function App() {
     };
   }, [updateStockWithDeltas, verifyServerOnline, loadStock]);
 
-  // Filtered models based on search query
+  // Flexible search: ignores spaces, punctuation, extra whitespace, and word order
   const filteredItems = useMemo(() => {
-    if (!searchQuery.trim()) return stockItems;
-    const q = searchQuery.toLowerCase().trim();
-    return stockItems.filter((item) =>
-      item.model.toLowerCase().includes(q)
-    );
+    const raw = searchQuery.toLowerCase().trim();
+    if (!raw) return stockItems;
+
+    const clean = (str) => str.toLowerCase().replace(/[^a-z0-9*]+/g, ' ').trim();
+    const compact = (str) => str.toLowerCase().replace(/[^a-z0-9*]/g, '');
+
+    const compactQuery = compact(raw);
+    const tokens = clean(raw).split(/\s+/).filter(Boolean);
+
+    if (!compactQuery && tokens.length === 0) return stockItems;
+
+    return stockItems.filter((item) => {
+      const compactModel = compact(item.model);
+      if (compactQuery && compactModel.includes(compactQuery)) {
+        return true;
+      }
+      const cleanModel = clean(item.model);
+      return tokens.length > 0 && tokens.every((tok) => cleanModel.includes(tok) || compactModel.includes(tok));
+    });
   }, [stockItems, searchQuery]);
 
   return (

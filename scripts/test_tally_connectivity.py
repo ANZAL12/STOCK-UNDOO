@@ -1,108 +1,37 @@
 #!/usr/bin/env python3
 """
-STOCK UNDO! - TallyPrime Connectivity & Read-Only Stock Verification Script
-Strictly Read-Only: Only performs XML data export requests. Never modifies Tally data.
+STOCK UNDO! - TallyPrime Connectivity & Strictly Non-Financial Verification Script
+Strictly Read-Only & Non-Financial: Requests ONLY stock quantities (no rates or values).
 
 Usage:
   python test_tally_connectivity.py
-  python test_tally_connectivity.py --pc1 127.0.0.1:9000 --pc2 100.101.152.68:9000
+  python test_tally_connectivity.py --pc1 100.123.59.93:9000 --pc2 100.101.152.68:9000
   python test_tally_connectivity.py --model "FORMENTY LED FMTY -FM55UHDQTVDXB5 GOOGLE Q LED TV VELORA"
 """
 
 import argparse
 import json
-import re
 import socket
 import sys
 import time
 import urllib.error
 import urllib.request
-import xml.etree.ElementTree as ET
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+BACKEND_DIR = Path(__file__).resolve().parent.parent / "backend"
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
-# ---------------------------------------------------------------------------
-# Strict Read-Only Tally XML Request Templates
-# ---------------------------------------------------------------------------
-
-XML_COMPANY_LIST = """<ENVELOPE>
-  <HEADER>
-    <TALLYREQUEST>Export Data</TALLYREQUEST>
-  </HEADER>
-  <BODY>
-    <EXPORTDATA>
-      <REQUESTDESC>
-        <REPORTNAME>List of Companies</REPORTNAME>
-        <STATICVARIABLES>
-          <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
-        </STATICVARIABLES>
-      </REQUESTDESC>
-    </EXPORTDATA>
-  </BODY>
-</ENVELOPE>"""
-
-def build_stock_summary_request(company_name: Optional[str] = None) -> str:
-    company_tag = f"<SVCURRENTCOMPANY>{escape_xml(company_name)}</SVCURRENTCOMPANY>" if company_name else ""
-    return f"""<ENVELOPE>
-  <HEADER>
-    <TALLYREQUEST>Export Data</TALLYREQUEST>
-  </HEADER>
-  <BODY>
-    <EXPORTDATA>
-      <REQUESTDESC>
-        <REPORTNAME>Stock Summary</REPORTNAME>
-        <STATICVARIABLES>
-          <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
-          <EXPLODEFLAG>Yes</EXPLODEFLAG>
-          <ISITEMWISE>Yes</ISITEMWISE>
-          {company_tag}
-        </STATICVARIABLES>
-      </REQUESTDESC>
-    </EXPORTDATA>
-  </BODY>
-</ENVELOPE>"""
-
-def build_single_item_request(model_name: str, company_name: Optional[str] = None) -> str:
-    company_tag = f"<SVCURRENTCOMPANY>{escape_xml(company_name)}</SVCURRENTCOMPANY>" if company_name else ""
-    return f"""<ENVELOPE>
-  <HEADER>
-    <TALLYREQUEST>Export Data</TALLYREQUEST>
-  </HEADER>
-  <BODY>
-    <EXPORTDATA>
-      <REQUESTDESC>
-        <REPORTNAME>Stock Summary</REPORTNAME>
-        <STATICVARIABLES>
-          <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
-          <EXPLODEFLAG>Yes</EXPLODEFLAG>
-          <ISITEMWISE>Yes</ISITEMWISE>
-          {company_tag}
-        </STATICVARIABLES>
-      </REQUESTDESC>
-    </EXPORTDATA>
-  </BODY>
-</ENVELOPE>"""
+from app.tally.xml_parser import parse_companies, parse_stock_summary
+from app.tally.xml_templates import (
+    build_company_list_request,
+    build_fast_stock_collection_request,
+    build_stock_summary_request,
+)
 
 
-def escape_xml(text: Optional[str]) -> str:
-    if not text:
-        return ""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-        .replace("'", "&apos;")
-    )
-
-
-def sanitize_tally_xml(xml_content: str) -> str:
-    if not xml_content:
-        return ""
-    # Strip illegal XML entity references &#0; through &#31;
-    s = re.sub(r'&#(?:[0-8]|1[1-2]|1[4-9]|[2-3][0-9]);', '', xml_content)
-    s = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', s)
-    return s
+XML_COMPANY_LIST = build_company_list_request()
 
 
 # ---------------------------------------------------------------------------
@@ -154,72 +83,6 @@ def post_tally_xml(host: str, port: int, xml_payload: str, timeout: float = 4.0)
         return False, str(e), latency_ms
 
 
-def parse_companies_from_xml(xml_content: str) -> List[str]:
-    """Extract open company names from Tally XML response."""
-    companies = []
-    if not xml_content:
-        return companies
-    clean_xml = sanitize_tally_xml(xml_content)
-    try:
-        root = ET.fromstring(clean_xml)
-        for comp in root.iter("COMPANY"):
-            name = comp.attrib.get("NAME")
-            if not name:
-                name_elem = comp.find("NAME")
-                if name_elem is not None and name_elem.text:
-                    name = name_elem.text.strip()
-            if name and name not in companies:
-                companies.append(name)
-        # Check SVCURRENTCOMPANY tag
-        cur = root.findtext(".//SVCURRENTCOMPANY")
-        if cur and cur.strip() and cur.strip() not in companies:
-            companies.insert(0, cur.strip())
-    except Exception:
-        pass
-    return companies
-
-
-def parse_stock_summary(xml_content: str) -> Dict[str, Dict[str, Any]]:
-    """
-    Parses item-wise Stock Summary from Tally.
-    Returns: { "item name": { "closing_qty": float, "unit": str } }
-    """
-    items = {}
-    if not xml_content:
-        return items
-    clean_xml = sanitize_tally_xml(xml_content)
-    try:
-        root = ET.fromstring(clean_xml)
-        current_name = None
-        for elem in root:
-            tag = elem.tag.upper().split("}")[-1]
-            if tag == "DSPACCNAME":
-                disp = elem.find("DSPDISPNAME")
-                if disp is not None and disp.text:
-                    current_name = disp.text.strip()
-            elif tag == "DSPSTKINFO" and current_name:
-                cl = elem.find(".//DSPCLQTY")
-                qty_str = cl.text.strip() if (cl is not None and cl.text) else "0"
-                # Parse quantity number and unit
-                # e.g., "12 Nos" or "100.00 Kg"
-                m = re.search(r"([+-]?\d+(?:\.\d+)?)\s*(.*)", qty_str)
-                qty = float(m.group(1)) if m else 0.0
-                unit = m.group(2).strip() if (m and m.group(2)) else "Nos"
-                items[current_name] = {
-                    "closing_qty": qty,
-                    "unit": unit,
-                    "raw": qty_str
-                }
-                current_name = None
-    except Exception as e:
-        pass
-    return items
-
-
-# ---------------------------------------------------------------------------
-# Test Runner
-# ---------------------------------------------------------------------------
-
 def run_diagnostic(name: str, host: str, port: int, test_models: List[str]) -> Dict[str, Any]:
     print(f"\n{'='*60}")
     print(f"[*] Testing {name}: {host}:{port}")
@@ -254,17 +117,21 @@ def run_diagnostic(name: str, host: str, port: int, test_models: List[str]) -> D
         result["error"] = f"HTTP request failed: {resp_xml}"
         return result
 
-    companies = parse_companies_from_xml(resp_xml)
+    companies = parse_companies(resp_xml)
     result["open_companies"] = companies
     print(f"  [3] Open Tally Company:  {companies if companies else 'None active / Default'}")
 
-    # Step 3: Stock Summary Export
+    # Step 3: Quantity-Only Collection Export (never requests or parses rates/values)
     company = companies[0] if companies else None
-    summary_xml = build_stock_summary_request(company)
-    s_ok, s_xml, s_latency = post_tally_xml(host, port, summary_xml, timeout=6.0)
+    fast_xml = build_fast_stock_collection_request(company)
+    s_ok, s_xml, s_latency = post_tally_xml(host, port, fast_xml, timeout=6.0)
+    if s_ok and "<COLLECTION" not in s_xml and "<STOCKITEM" not in s_xml and "<DSPACCNAME" not in s_xml:
+        summary_xml = build_stock_summary_request(company)
+        s_ok, s_xml, s_latency = post_tally_xml(host, port, summary_xml, timeout=6.0)
+
     if s_ok:
         stock_data = parse_stock_summary(s_xml)
-        print(f"  [4] Stock Summary Probe: [PASS] Found {len(stock_data)} items ({s_latency:.1f}ms)")
+        print(f"  [4] Stock Quantity Only: [PASS] Found {len(stock_data)} items ({s_latency:.1f}ms)")
 
         for model in test_models:
             matched = False
@@ -286,8 +153,8 @@ def run_diagnostic(name: str, host: str, port: int, test_models: List[str]) -> D
                     "matched_item": None
                 }
     else:
-        print(f"  [4] Stock Summary Probe: [FAIL] {s_xml}")
-        result["error"] = f"Stock summary query failed: {s_xml}"
+        print(f"  [4] Stock Quantity Only: [FAIL] {s_xml}")
+        result["error"] = f"Stock quantity query failed: {s_xml}"
 
     return result
 

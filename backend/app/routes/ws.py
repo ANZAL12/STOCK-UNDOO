@@ -75,8 +75,8 @@ async def websocket_stock_endpoint(websocket: WebSocket):
     """
     await ws_hub.connect(websocket)
     try:
-        # Send initial live state immediately upon connection
-        initial_data = await StockService.get_all_stock(force_refresh=True)
+        # Send current live/cached state immediately upon connection without hammering Tally
+        initial_data = await StockService.get_all_stock(force_refresh=False)
         await websocket.send_json({
             "type": "INITIAL_STOCK",
             "data": initial_data.model_dump()

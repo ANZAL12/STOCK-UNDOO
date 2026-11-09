@@ -47,9 +47,9 @@ class Settings(BaseSettings):
     PC2_PORT: int = int(os.getenv("PC2_PORT", "9000"))
     PC2_LABEL: str = os.getenv("PC2_LABEL", "Tally PC 2 (Branch / Godown)")
 
-    # Timeouts & Cache (Near-instant 2s cache for real-time stock sync)
+    # Timeouts & Cache (Cache TTL >= WS poll interval so HTTP polls hit RAM cache)
     TALLY_TIMEOUT_SECONDS: float = float(os.getenv("TALLY_TIMEOUT_SECONDS", "6.0"))
-    CACHE_TTL_SECONDS: int = int(os.getenv("CACHE_TTL_SECONDS", "2"))
+    CACHE_TTL_SECONDS: int = int(os.getenv("CACHE_TTL_SECONDS", "4"))
     LIVE_POLL_INTERVAL_SECONDS: float = float(os.getenv("LIVE_POLL_INTERVAL_SECONDS", "3.0"))
 
     # Rate Limiting (Allows fast live polling)

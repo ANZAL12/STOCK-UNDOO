@@ -40,8 +40,8 @@ def build_company_list_request() -> str:
 
 def build_stock_summary_request(company_name: Optional[str] = None) -> str:
     """
-    Read-only request to export item-wise Stock Summary with closing quantities.
-    STRICTLY NON-FINANCIAL (rates and values are ignored by the parser).
+    Read-only request to export item-wise Stock Summary with closing quantities ONLY.
+    STRICTLY NON-FINANCIAL: disables rates, values, inwards, and outwards at Tally source.
     """
     company_filter = (
         f"<SVCURRENTCOMPANY>{escape_xml(company_name)}</SVCURRENTCOMPANY>"
@@ -60,6 +60,11 @@ def build_stock_summary_request(company_name: Optional[str] = None) -> str:
           <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
           <EXPLODEFLAG>Yes</EXPLODEFLAG>
           <ISITEMWISE>Yes</ISITEMWISE>
+          <DSPSHOWQTY>Yes</DSPSHOWQTY>
+          <DSPSHOWRATE>No</DSPSHOWRATE>
+          <DSPSHOWVALUE>No</DSPSHOWVALUE>
+          <DSPSHOWINWARDS>No</DSPSHOWINWARDS>
+          <DSPSHOWOUTWARDS>No</DSPSHOWOUTWARDS>
           {company_filter}
         </STATICVARIABLES>
       </REQUESTDESC>
@@ -68,10 +73,49 @@ def build_stock_summary_request(company_name: Optional[str] = None) -> str:
 </ENVELOPE>"""
 
 
+def build_fast_stock_collection_request(company_name: Optional[str] = None) -> str:
+    """
+    High-speed, minimal-CPU read-only TDL Collection query for TallyPrime.
+    Fetches ONLY ClosingBalance (stock count) for non-zero items while Tally emits
+    item NAME as the STOCKITEM attribute; zero rates, values, or master UDFs are fetched.
+    """
+    company_filter = (
+        f"<SVCURRENTCOMPANY>{escape_xml(company_name)}</SVCURRENTCOMPANY>"
+        if company_name
+        else ""
+    )
+    return f"""<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION>
+    <TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Collection</TYPE>
+    <ID>StockUndoFastCollection</ID>
+  </HEADER>
+  <BODY>
+    <DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        {company_filter}
+      </STATICVARIABLES>
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="StockUndoFastCollection" ISMODIFY="No">
+            <TYPE>StockItem</TYPE>
+            <FETCH>ClosingBalance</FETCH>
+            <FILTER>NonZeroClosing</FILTER>
+          </COLLECTION>
+          <SYSTEM TYPE="Formulae" NAME="NonZeroClosing">Not $$IsEmpty:$ClosingBalance</SYSTEM>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>
+</ENVELOPE>"""
+
+
 def build_stock_item_details_request(item_name: str, company_name: Optional[str] = None) -> str:
     """
-    Read-only request for a specific Stock Item's closing quantity using TDL Collection.
-    Guarantees no data mutation.
+    Read-only request for a specific Stock Item's closing quantity ONLY using TDL Collection.
+    Guarantees no financial data or mutation.
     """
     company_filter = (
         f"<SVCURRENTCOMPANY>{escape_xml(company_name)}</SVCURRENTCOMPANY>"
@@ -94,9 +138,7 @@ def build_stock_item_details_request(item_name: str, company_name: Optional[str]
           <TDLMESSAGE>
             <COLLECTION NAME="SingleStockItemCollection" ISINITIALIZE="Yes">
               <TYPE>StockItem</TYPE>
-              <NATIVEMETHOD>Name</NATIVEMETHOD>
               <NATIVEMETHOD>ClosingBalance</NATIVEMETHOD>
-              <NATIVEMETHOD>BaseUnits</NATIVEMETHOD>
               <FILTERS>MatchSpecificItem</FILTERS>
             </COLLECTION>
             <SYSTEM TYPE="Formulae" NAME="MatchSpecificItem">
