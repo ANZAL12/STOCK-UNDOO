@@ -93,6 +93,9 @@ class TallyClient:
         Tests if Tally is online and retrieves open company list.
         First does a fast TCP test, then an XML probe.
         """
+        if not host or not host.strip():
+            return False, 0.0, [], "Host disabled"
+
         loop = asyncio.get_running_loop()
         tcp_ok, latency, err = await loop.run_in_executor(None, cls.test_tcp_port, host, port, 1.2)
         if not tcp_ok:
@@ -119,6 +122,14 @@ class TallyClient:
         Retrieves all stock quantities from Tally's item-wise Stock Summary.
         Returns: (success, {item_name: {closing_qty, unit, raw}}, error)
         """
+        if not host or not host.strip():
+            return False, {}, "Host disabled"
+
+        loop = asyncio.get_running_loop()
+        tcp_ok, _, err = await loop.run_in_executor(None, cls.test_tcp_port, host, port, 1.2)
+        if not tcp_ok:
+            return False, {}, err
+
         xml_req = build_stock_summary_request(company_name)
         ok, resp_text, _, err = await cls.post_xml(host, port, xml_req, timeout=timeout)
         if not ok:

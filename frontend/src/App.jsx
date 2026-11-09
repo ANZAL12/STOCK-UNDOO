@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { fetchAllStock } from './api';
+import { fetchAllStock, fetchHealth, getWebSocketUrl } from './api';
 import { Search, RotateCw, X, Package, WifiOff, AlertTriangle } from 'lucide-react';
 
 export default function App() {
@@ -14,6 +14,7 @@ export default function App() {
   const [changedModels, setChangedModels] = useState({});
   const prevStockRef = useRef({});
   const wsRef = useRef(null);
+  const isFetchingRef = useRef(false);
 
   // Helper to detect changed quantities
   const updateStockWithDeltas = useCallback((newItems) => {
@@ -42,18 +43,33 @@ export default function App() {
     }
   }, []);
 
+  // Verify immediately whether the backend server is truly offline
+  const verifyServerOnline = useCallback(async () => {
+    try {
+      await fetchHealth();
+      setIsServerOffline(false);
+      return true;
+    } catch {
+      setIsServerOffline(true);
+      return false;
+    }
+  }, []);
+
   // Fetch stock from backend
   const loadStock = useCallback(async (isManual = false) => {
+    if (!isManual && isFetchingRef.current) return;
+    isFetchingRef.current = true;
     if (isManual) setIsRefreshing(true);
 
     try {
-      const data = await fetchAllStock(true);
+      const data = await fetchAllStock(isManual);
       updateStockWithDeltas(data.items || []);
       setIsServerOffline(false);
     } catch (err) {
       console.warn('Backend server is unreachable:', err);
       setIsServerOffline(true); // Trigger instant popup
     } finally {
+      isFetchingRef.current = false;
       setIsLoading(false);
       setIsRefreshing(false);
     }
@@ -64,33 +80,43 @@ export default function App() {
     loadStock(false);
   }, [loadStock]);
 
-  // Live polling (every 3 seconds to ensure instant offline & online detection)
+  // Background polling (every 5 seconds as fallback + instant offline detection)
   useEffect(() => {
     const pollTimer = setInterval(() => {
-      loadStock(false);
-    }, 3000);
+      if (document.visibilityState !== 'hidden') {
+        loadStock(false);
+      }
+    }, 5000);
 
     return () => clearInterval(pollTimer);
   }, [loadStock]);
 
-  // WebSocket Live Connection
+  // WebSocket Live Connection with heartbeat
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/ws/stock`;
+    const wsUrl = getWebSocketUrl();
 
     let reconnectTimer = null;
+    let heartbeatTimer = null;
+    let isUnmounted = false;
 
     const connectWebSocket = () => {
+      if (isUnmounted) return;
       try {
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
           setIsServerOffline(false);
+          if (heartbeatTimer) clearInterval(heartbeatTimer);
+          heartbeatTimer = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send('ping');
+            }
+          }, 20000);
         };
 
         ws.onmessage = (event) => {
+          if (event.data === 'pong') return;
           try {
             const message = JSON.parse(event.data);
             if (message.type === 'STOCK_UPDATED' || message.type === 'INITIAL_STOCK') {
@@ -106,28 +132,48 @@ export default function App() {
         };
 
         ws.onclose = () => {
-          // If socket closes unexpectedly, verify if server is down
-          reconnectTimer = setTimeout(() => {
-            connectWebSocket();
-          }, 2000);
+          if (heartbeatTimer) {
+            clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+          }
+          if (!isUnmounted) {
+            reconnectTimer = setTimeout(() => {
+              connectWebSocket();
+            }, 2500);
+          }
         };
 
         ws.onerror = () => {
-          setIsServerOffline(true);
+          // Confirm server reachability before showing offline modal
+          verifyServerOnline();
           ws.close();
         };
       } catch (err) {
-        setIsServerOffline(true);
+        verifyServerOnline();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadStock(false);
+        if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          connectWebSocket();
+        }
       }
     };
 
     connectWebSocket();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      isUnmounted = true;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
       if (wsRef.current) wsRef.current.close();
     };
-  }, [updateStockWithDeltas]);
+  }, [updateStockWithDeltas, verifyServerOnline, loadStock]);
 
   // Filtered models based on search query
   const filteredItems = useMemo(() => {
