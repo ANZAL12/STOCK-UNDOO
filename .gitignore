@@ -1,26 +1,58 @@
-# Python Virtual Environment
+# ==============================================================================
+# STOCK UNDO! - Git Ignore Rules
+# ==============================================================================
+
+# Environment Variables & Secrets (keep .env.example templates tracked)
+.env
+.env.*
+!.env.example
+
+# Tunnel Secrets & Credentials (keep example & docs tracked)
+tunnel/config.yml
+tunnel/*.json
+
+# Tally XML Exports / Dumps (never commit Tally data or test XML dumps)
+*.xml
+
+# Python Virtual Environments & Packaging
 .venv/
 venv/
 ENV/
 env/
+*.egg-info/
+.eggs/
+build/
 
-# Python Cache
+# Python Caches, Tests & Logs
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+logs/
 *.log
 
-# Node.js
+# Node.js / Vite / React / Vercel
 node_modules/
 dist/
+dist-ssr/
 .vite/
+.vercel/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
 
-# Local Environment
-.env.local
-.env.*.local
+# IDEs & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # OS Files
 Thumbs.db
 Desktop.ini
 .DS_Store
-

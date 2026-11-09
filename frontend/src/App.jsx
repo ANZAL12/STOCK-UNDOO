@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { fetchAllStock, fetchHealth, getWebSocketUrl } from './api';
-import { Search, RotateCw, X, Package, WifiOff, AlertTriangle } from 'lucide-react';
+import { Search, RotateCw, X, Package, WifiOff, Check } from 'lucide-react';
 
 export default function App() {
   const [stockItems, setStockItems] = useState([]);
@@ -9,12 +9,65 @@ export default function App() {
   const [isServerOffline, setIsServerOffline] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedModel, setSelectedModel] = useState('32 HDR- FM 32 HDROP 1');
+  const [copiedModel, setCopiedModel] = useState(null);
 
   // Real-time changed items map: { [model]: 'increased' | 'decreased' }
   const [changedModels, setChangedModels] = useState({});
   const prevStockRef = useRef({});
   const wsRef = useRef(null);
   const isFetchingRef = useRef(false);
+  const copyTimerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
+  const copyModelName = useCallback(async (modelName) => {
+    setSelectedModel(modelName);
+    let copied = false;
+
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(modelName);
+        copied = true;
+      }
+    } catch {
+      copied = false;
+    }
+
+    if (!copied) {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = modelName;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.top = '0';
+        textarea.style.left = '0';
+        textarea.style.width = '1px';
+        textarea.style.height = '1px';
+        textarea.style.fontSize = '16px';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus({ preventScroll: true });
+        textarea.select();
+        textarea.setSelectionRange(0, modelName.length);
+        copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (copied) {
+      setCopiedModel(modelName);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => {
+        setCopiedModel(null);
+      }, 1800);
+    }
+  }, []);
 
   // Helper to detect changed quantities
   const updateStockWithDeltas = useCallback((newItems) => {
@@ -343,12 +396,22 @@ export default function App() {
               const isOffline = item.status === 'Source Offline';
               const changeType = changedModels[item.model];
               const isSelected = selectedModel === item.model;
+              const isCopied = copiedModel === item.model;
 
               return (
                 <div
                   key={`${item.model}-${idx}`}
-                  onClick={() => setSelectedModel(selectedModel === item.model ? null : item.model)}
-                  className={`rounded-2xl p-4 flex items-center justify-between transition-all duration-200 cursor-pointer select-none ${
+                  role="button"
+                  tabIndex={0}
+                  title="Tap to copy model name"
+                  onClick={() => copyModelName(item.model)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      copyModelName(item.model);
+                    }
+                  }}
+                  className={`rounded-2xl p-4 flex items-center justify-between transition-all duration-200 cursor-pointer active:scale-[0.99] select-none ${
                     isSelected || changeType
                       ? 'border-2 border-[#FACC15] bg-white shadow-xs'
                       : 'border border-slate-200 bg-white hover:border-slate-300 shadow-2xs'
@@ -359,6 +422,12 @@ export default function App() {
                     <h2 className="text-sm sm:text-[15px] font-bold text-slate-950 leading-snug break-words font-sans">
                       {item.model}
                     </h2>
+                    {isCopied && (
+                      <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-[11px] font-bold text-[#16A34A]">
+                        <Check className="w-3 h-3" />
+                        Copied
+                      </span>
+                    )}
                   </div>
 
                   {/* Quantity & In Stock Badge (Right) */}
