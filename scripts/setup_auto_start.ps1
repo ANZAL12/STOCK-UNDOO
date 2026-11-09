@@ -4,7 +4,7 @@
 # ==============================================================================
 
 param (
-    [string]$Port = "8000",
+    [string]$Port = "8080",
     [string]$TaskName = "StockUndoBackendServer"
 )
 
@@ -53,26 +53,33 @@ if (-not (Test-Path $VenvPython)) {
     Write-Host "[OK] Virtual environment created and packages installed!" -ForegroundColor Green
 }
 
-# 2. Check for Port Conflicts with Other Existing Servers
-$candidatePorts = @($Port, "8080", "8090", "8095", "8100") | Select-Object -Unique
+# 2. Check for Port Conflicts with Other Existing Servers (Never claim port 8000 or any foreign server port)
+$escapedRoot = [System.Management.Automation.WildcardPattern]::Escape($ProjectRoot)
+$candidatePorts = @($Port, "8080", "8090", "8095", "8100", "8105", "8110") | Where-Object { $_ -ne "8000" } | Select-Object -Unique
+$selectedPort = $null
 foreach ($tryPort in $candidatePorts) {
     $portInUse = Get-NetTCPConnection -LocalPort $tryPort -State Listen -ErrorAction SilentlyContinue
     if (-not $portInUse) {
-        $Port = $tryPort
+        $selectedPort = $tryPort
         break
     }
     $owningPid = $portInUse.OwningProcess | Select-Object -First 1
     $proc = Get-Process -Id $owningPid -ErrorAction SilentlyContinue
     $procCmd = (Get-CimInstance Win32_Process -Filter "ProcessId = $owningPid" -ErrorAction SilentlyContinue).CommandLine
 
-    if ($procCmd -and (($procCmd -like "*$ProjectRoot*") -or ($procCmd -like "*app.main:app*"))) {
+    if ($procCmd -and ($procCmd -like "*$escapedRoot*")) {
         Write-Host "[*] Port $tryPort is currently running STOCK UNDO!. Keeping port $tryPort." -ForegroundColor Green
-        $Port = $tryPort
+        $selectedPort = $tryPort
         break
     } else {
         Write-Host "[!] Port $tryPort is in use by another server ('$($proc.ProcessName)', PID $owningPid). Checking next port..." -ForegroundColor Yellow
     }
 }
+if (-not $selectedPort) {
+    Write-Error "No free port found among: $($candidatePorts -join ', '). Pass -Port <free_port> manually."
+    exit 1
+}
+$Port = $selectedPort
 Write-Host "[+] Selected safe backend port: $Port" -ForegroundColor Cyan
 
 # 3. Create Silent Launcher VBScript (Runs hidden in background with 0 window popup)
@@ -92,6 +99,10 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 
 if ($isAdmin) {
     Write-Host "[*] Running as Administrator: Registering System Startup Boot Task..." -ForegroundColor Green
+    $legacyStartup = Join-Path ([Environment]::GetFolderPath("Startup")) "StockUndoBackend.vbs"
+    if (Test-Path $legacyStartup) {
+        Remove-Item $legacyStartup -Force -ErrorAction SilentlyContinue
+    }
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 
     $Action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$VbsScript`""
@@ -145,13 +156,30 @@ try {
     Write-Host "[INFO] Backend started. It is initializing on http://127.0.0.1:$Port" -ForegroundColor Cyan
 }
 
+# 7. Inspect existing Tailscale Funnel ports read-only so we NEVER recommend overwriting port 443
+$funnelStatusText = ""
+try {
+    $funnelStatusText = (tailscale serve status 2>&1 | Out-String)
+} catch {
+    $funnelStatusText = ""
+}
+$has443Funnel = $funnelStatusText -match "https://[^\s:/]+(\s|\()"
+$has8443Funnel = $funnelStatusText -match ":8443(\s|\()"
+
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host " Setup complete! The backend will now start automatically" -ForegroundColor Green
 Write-Host " every time this computer is powered on or restarted." -ForegroundColor Green
-Write-Host " Running on port: $Port" -ForegroundColor Yellow
+Write-Host " Running on local port: $Port (port 8000 is untouched)" -ForegroundColor Yellow
 Write-Host ""
-Write-Host " Next step (expose publicly via Tailscale Funnel):" -ForegroundColor Cyan
-Write-Host "   tailscale funnel --bg --yes $Port" -ForegroundColor White
-Write-Host " (Or if port 443 is already used by another Funnel server:)" -ForegroundColor DarkGray
-Write-Host "   tailscale funnel --https=8443 --bg --yes $Port" -ForegroundColor White
+if ($has443Funnel) {
+    $safeFunnelPort = if ($has8443Funnel) { "10000" } else { "8443" }
+    Write-Host " [IMPORTANT] Tailscale Funnel port 443 is ALREADY used by another server!" -ForegroundColor Yellow
+    Write-Host " Run ONLY this command so you do NOT affect your existing server:" -ForegroundColor Cyan
+    Write-Host "   tailscale funnel --https=$safeFunnelPort --bg --yes $Port" -ForegroundColor White
+} else {
+    Write-Host " Next step (expose publicly via Tailscale Funnel):" -ForegroundColor Cyan
+    Write-Host "   tailscale funnel --https=8443 --bg --yes $Port" -ForegroundColor White
+    Write-Host " (Or on default HTTPS 443 only if no other Funnel app runs on this PC:)" -ForegroundColor DarkGray
+    Write-Host "   tailscale funnel --bg --yes $Port" -ForegroundColor DarkGray
+}
 Write-Host "==========================================================`n" -ForegroundColor Cyan

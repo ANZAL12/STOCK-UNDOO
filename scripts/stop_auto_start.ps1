@@ -23,8 +23,10 @@ Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 Write-Host "[OK] Scheduled Task '$TaskName' removed." -ForegroundColor Green
 
-# 3. Kill any running uvicorn process for Stock Undoo
-Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*Stock Undoo*uvicorn*" } | ForEach-Object {
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+
+# 3. Kill any running uvicorn process belonging ONLY to this STOCK UNDO! directory
+Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$ProjectRoot*uvicorn*") } | ForEach-Object {
     Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
     Write-Host "[OK] Stopped background process PID $($_.ProcessId)" -ForegroundColor Green
 }
